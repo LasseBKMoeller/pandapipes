@@ -18,6 +18,9 @@ from pandapipes.idx_node import PINIT, PAMB, TINIT as TINIT_NODE
 from pandapipes.pf.pipeflow_setup import get_fluid, get_net_option, get_lookup
 from pandapipes.pf.result_extraction import extract_branch_results_without_internals
 
+from pandapipes.idx_branch import JAC_DERIV_DM, LOAD_VEC_BRANCHES, TO_NODE
+
+
 try:
     import pandaplan.core.pplog as logging
 except ImportError:
@@ -117,6 +120,47 @@ class Pump(BranchWZeroLengthComponent):
             fcts = [fcts] if not isinstance(fcts, tuple) else fcts
             pl = np.array(list(map(lambda x, y: x.get_pressure(y), fcts, vol)))
             pump_branch_pit[:, PL] = pl
+
+    # Hinzugefügt, weil Ableitung nicht richtig berechnet?
+    
+    @classmethod
+    def adaption_after_derivatives_hydraulic(cls, net, branch_pit, node_pit, idx_lookups, options):
+        #calculation of JAC_DERIV_DM for the pump objects
+        #here the necessary parameters are collected
+        f, t = idx_lookups[cls.table_name()]
+        pump_branch_pit = branch_pit[f:t, :]
+        area = pump_branch_pit[:, AREA]
+
+        pump_array = get_component_array(net, cls.table_name())
+        idx = pump_array[:, cls.STD_TYPE].astype(np.int32)
+        std_types = get_std_type_lookup(net, cls.table_name())[idx]
+
+        from_nodes = pump_branch_pit[:, FROM_NODE].astype(np.int32)
+        to_nodes = pump_branch_pit[:, TO_NODE].astype(np.int32)
+        fluid = get_fluid(net)
+        p_from = node_pit[from_nodes, PAMB] + node_pit[from_nodes, PINIT]
+        t_from = node_pit[from_nodes, TINIT_NODE]
+        numerator_from = NORMAL_PRESSURE * t_from
+        v_mps = pump_branch_pit[:, MDOTINIT] / pump_branch_pit[:, AREA] / fluid.get_density(NORMAL_TEMPERATURE)
+        if fluid.is_gas:
+            # consider volume flow at inlet
+            normfactor_from = numerator_from * fluid.get_property("compressibility", p_from) \
+                              / (p_from * NORMAL_TEMPERATURE)
+            v_from = v_mps * normfactor_from
+        else:
+            v_from = v_mps
+        vol = v_from * area
+
+        #using x.get_derivative(y) we get the derivative dF/dVdot of the characteristic curve
+        #from there we need to convert to dF/dmdot
+        if len(std_types):
+            fcts = itemgetter(*std_types)(net['std_types']['pump'])
+            fcts = [fcts] if not isinstance(fcts, tuple) else fcts
+            dFdv = np.array(list(map(lambda x, y: x.get_derivative(y), fcts, vol)))
+            dFdm = dFdv / fluid.get_density(NORMAL_TEMPERATURE) * 3600 #[v_dot] = m^3 /h = 1/3600 * \rho kg/s = [m_dot]
+
+            pump_branch_pit[:, JAC_DERIV_DM] = dFdm 
+        pass
 
     @classmethod
     def extract_results(cls, net, options, branch_results, mode):

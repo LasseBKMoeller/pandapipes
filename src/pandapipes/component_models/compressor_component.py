@@ -77,6 +77,10 @@ class Compressor(Pump):
         pl_abs[m_mps < 0] = 0  # force pressure lift = 0 for reverse flow
 
         compressor_branch_pit[:, PL] = pl_abs
+        
+    @classmethod
+    def adaption_after_derivatives_hydraulic(cls, net, branch_pit, node_pit, idx_lookups, options):
+        pass
 
     @classmethod
     def get_component_input(cls):

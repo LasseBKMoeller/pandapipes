@@ -178,33 +178,55 @@ class PumpStdType(RegressionStdType):
         """
         Calculate the pressure lift based on a polynomial from a regression.
 
-        It is ensured that the pressure lift is always >= 0. For reverse flows, bypassing is
-        assumed.
-
         :param vdot_m3_per_s: Volume flow rate of a fluid in [m^3/s].
         :type vdot_m3_per_s: float, array-like
         :return: This function returns the corresponding pressure to the given volume flow rate \
                 in [bar]
         :rtype: float
         """
-        # no reverse flow - for vdot < 0, assume bypassing
         n = np.arange(len(self.reg_par), 0, -1)
         if np.iterable(vdot_m3_per_s):
             results = np.zeros(len(vdot_m3_per_s), dtype=float)
-            if any(vdot_m3_per_s < 0):
-                logger.debug("Reverse flow observed in a %s pump. "
-                             "Bypassing without pressure change is assumed" % str(self.name))
+            
             mask = vdot_m3_per_s >= 0
-            # no negative pressure lift - bypassing always allowed:
+            neg_reg_par = self.reg_par.copy()
+            neg_reg_par[0] *= 1
+
             results[mask] = \
-                np.where(mask, np.sum(self.reg_par * (vdot_m3_per_s[mask][:, None] * 3600) ** (n - 1), axis=1), 0)
+                np.where(mask, np.sum(self.reg_par * (vdot_m3_per_s[mask][:, None] * 3600) ** (n - 1), axis=1), sum(-neg_reg_par * (-vdot_m3_per_s[not mask][:, None] * 3600) ** (n - 1)))
         else:
             if vdot_m3_per_s < 0:
-                logger.debug("Reverse flow observed in a %s pump. "
-                             "Bypassing without pressure change is assumed" % str(self.name))
-                results = 0
+                # rotate characteristic function along y intercept to be consistent with stanet
+                # this way we get a strictly decreasing differentiable function to guarantee convergence
+                results = sum(- self.reg_par * ( -vdot_m3_per_s * 3600) ** (n - 1) + 2* self.reg_par[-1])
             else:
-                results = max(0, sum(self.reg_par * (vdot_m3_per_s * 3600) ** (n - 1)))
+                results = sum(self.reg_par * (vdot_m3_per_s * 3600) ** (n - 1)) 
+        return results
+    
+    def get_derivative(self, vdot_m3_per_s):
+        """
+        Calculate the derivative d(Δp)/d(vdot) of the characteristic polynomial for the pump.
+
+        :param vdot_m3_per_s: Volume flow rate of a fluid in [m^3/s].
+        :type vdot_m3_per_s: float, array-like
+        :return: This function returns the derivative to the given volume flow rate \
+                in [bar/(m^3/s)]
+        :rtype: float
+        """
+        n = np.arange(len(self.reg_par)-1, 0, -1)
+        if np.iterable(vdot_m3_per_s):
+            mask = vdot_m3_per_s >= 0
+
+            #dervative of the rotated function
+            results = np.zeros(len(vdot_m3_per_s), dtype=float)
+            results[mask] = \
+                np.where(mask, np.sum(n * self.reg_par[:-1] * (vdot_m3_per_s[:, None] * 3600) ** (n - 1), axis=1), np.sum(n * self.reg_par[:-1] * (-vdot_m3_per_s[not mask][:, None] * 3600) ** (n - 1), axis=1))
+
+        else:
+            if vdot_m3_per_s < 0:
+                results = sum(n * self.reg_par[:-1] * (-vdot_m3_per_s * 3600) ** (n - 1))
+            else:
+                results = sum(n * self.reg_par[:-1] * (vdot_m3_per_s * 3600) ** (n - 1))
         return results
 
     @classmethod

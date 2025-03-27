@@ -1,0 +1,1 @@
+MODE = "" #if the hydrants should lie on junctions or pipes

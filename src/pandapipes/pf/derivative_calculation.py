@@ -37,7 +37,7 @@ def calculate_derivatives_hydraulic(net, branch_pit, node_pit, options):
         branch_pit[:, MDOTINIT], eta, branch_pit[:, D],
         branch_pit[:, K], gas_mode, friction_model, branch_pit[:, LENGTH], options, branch_pit[:, AREA])
     der_lambda = calc_der_lambda(branch_pit[:, MDOTINIT], eta,
-                                 branch_pit[:, D], branch_pit[:, K], friction_model, lambda_, branch_pit[:, AREA])
+                                 branch_pit[:, D], branch_pit[:, K], re, friction_model, lambda_, branch_pit[:, AREA])
     branch_pit[:, RE] = re
     branch_pit[:, LAMBDA] = lambda_
     from_nodes = branch_pit[:, FROM_NODE].astype(np.int32)
@@ -191,6 +191,15 @@ def calc_lambda(m, eta, d, k, gas_mode, friction_model, lengths, options, area):
                 "inconsistencies. The maximum iterations can be given as 'max_iter_colebrook' "
                 "argument to the pipeflow.")
         return lambda_colebrook, re
+    elif friction_model == "colebrook-laminar":
+        #here we do not test if the colebrook algorithm converged and only do maximally the number of iterations given in max_iter_colebrook
+        #We do this, since for small reynoldsnumbers the lambdas get so large the colebrook algorithm cannot converge because of floating point accuracy
+        max_iter = options.get("max_iter_colebrook", 100)
+        dummy = (lengths != 0).astype(np.float64)
+        converged, lambda_colebrook = colebrook(re, d, k, lambda_nikuradse, dummy, max_iter)
+        pos_lam = lambda_laminar > lambda_colebrook
+        return np.max([lambda_laminar, lambda_colebrook], axis = 0), re        
+
     elif friction_model == "swamee-jain":
         lambda_swamee_jain = 0.25 / ((np.log10(k / (3.7 * d) + 5.74 / (re ** 0.9))) ** 2)
         return lambda_swamee_jain, re
@@ -200,7 +209,7 @@ def calc_lambda(m, eta, d, k, gas_mode, friction_model, lengths, options, area):
         return lambda_tot, re
 
 
-def calc_der_lambda(m, eta, d, k, friction_model, lambda_pipe, area):
+def calc_der_lambda(m, eta, d, k, re, friction_model, lambda_pipe, area):
     """
     Function calculates the derivative of lambda with respect to v. Turbulence is calculated based
     on Nikuradse. This should not be a problem as the pressure loss term will equal zero
@@ -241,6 +250,29 @@ def calc_der_lambda(m, eta, d, k, friction_model, lambda_pipe, area):
                      * lambda_pipe[pos] ** (-3 / 2) / (np.log(10) * b_term[pos])
 
         lambda_der[pos] = df_dm[pos] / df_dlambda[pos]
+
+        return lambda_der
+    elif friction_model == "colebrook-laminar":
+        laminar_mask = (np.divide(64,re, out = np.zeros_like(re), where= re != 0) == lambda_pipe) #where is the lambda calculated using the laminar formula, not very elegant I know
+        #pipes where the colebrook formula applies
+        pos_col = ~laminar_mask & pos
+
+        b_term[pos_col] = (2.51 * eta[pos_col] * area[pos_col] / (m[pos_col] * d[pos_col] * np.sqrt(lambda_pipe[pos_col])) +
+                       k[pos_col] / (3.71 * d[pos_col]))
+
+        df_dm[pos_col] = -2 * 2.51 * eta[pos_col] * area[pos_col] / (m[pos_col] ** 2 * np.sqrt(lambda_pipe[pos_col]) * d[pos_col]) \
+                / (np.log(10) * b_term[pos_col])
+
+        df_dlambda[pos_col] = -0.5 * lambda_pipe[pos_col] ** (-3 / 2) - (2.51 * eta[pos_col] * area[pos_col] / (d[pos_col] * m[pos_col])) \
+                     * lambda_pipe[pos_col] ** (-3 / 2) / (np.log(10) * b_term[pos_col])
+
+        lambda_der[pos_col] = df_dm[pos_col] / df_dlambda[pos_col]
+
+        #pipes with laminar flow
+        pos_lam = laminar_mask & pos
+        #print(f"Biggest reynolds number of laminar pipe: {np.max(re[pos_lam])}")
+
+        lambda_der[pos_lam] = -(64 * eta[pos_lam] * area[pos_lam]) / (m[pos_lam] ** 2 * d[pos_lam])
 
         return lambda_der
     elif friction_model == "swamee-jain":

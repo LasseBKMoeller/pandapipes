@@ -1,4 +1,4 @@
-During an internship at Gelsenwasser (https://www.gelsenwasser.de) I extended pandapipes with the functionality to calculate the amount of water one can get from a hydrant in case of fire.
+During an internship at GELSENWASSER Energienetze GmbH (https://www.gw-energienetze.de) I extended pandapipes with the functionality to calculate the amount of water one can get from a hydrant in case of fire.
 
 For this a new component called hydrant has been created that can be added to the grid in two ways: Either at a junction or on a pipe (for now those ways cannot be mixed). For a grid with sources, sinks, ext_grids etc. and hydrants a hydrant calculation can be done which finds for all hydrants the maximal amount of water which can be obtained at the hydrants, such that the minimal pressure in the grid does not fall below a certain threshold.
 

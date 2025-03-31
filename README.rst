@@ -4,6 +4,9 @@ For this a new component called hydrant has been created that can be added to th
 
 Tutorials on how to use the new functions can be found in the tutorials folder (in german).
 
+If you have any questions you can ask me or Philipp Jünemann at Gelsenwasser Energienetze:
+philipp.juenemann@gw-energienetze.de
+
 
 
 .. image:: ./doc/source/pics/pp.svg

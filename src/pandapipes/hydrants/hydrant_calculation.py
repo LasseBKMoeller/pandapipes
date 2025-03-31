@@ -64,7 +64,8 @@ def run_full_hydrant_calculation(net, hydrant_controller, parallel = False, on_i
     #disable all hydrants
     for hydrant in net.hydrant.index:
         remove_hydrant_from_net(net, hydrant)
-
+        
+    print("Started full hydrant calculation...")
     if parallel == True:
         #calculate in parallel
         f = partial(run_hydrant_calculation, net = net, hydrant_controller=hydrant_controller, **kwargs)
@@ -75,11 +76,12 @@ def run_full_hydrant_calculation(net, hydrant_controller, parallel = False, on_i
         results = []
         nets = []
         for hydrant in net.hydrant.index:
+            print(hydrant, end = " ")
             run_hydrant_calculation(hydrant, net, hydrant_controller, **kwargs)
             results.append(net.res_hydrant.loc[hydrant])
             if on_iteration is not None:
                 on_iteration()
-    
+    print("\nFinished full hydrant calculation.")
     return pd.DataFrame(results, index=net.hydrant.index)
 
 
